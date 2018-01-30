@@ -8,13 +8,14 @@
 
 const FF = (() => {
     const AUTHOR = "David Rosenblum",
-        VERSION = "0.1.1";
+        VERSION = "0.1.2";
 
     let lastDisplayObjectID = 0;
 
     let FFEvent = class FFEvent{
-        constructor(type){
+        constructor(type, target){
             this.type = type;
+            this.target = target;
         }
     };
     FFEvent.MOVE = "move";
@@ -26,79 +27,7 @@ const FF = (() => {
     FFEvent.RENDER_START = "renderstart";
     FFEvent.RENDER_DONE = "renderdone";
     FFEvent.CLICK = "click";
-
-    let BitmapData = class BitmapData{
-        constructor(data){
-            this.data = data;
-            this.clipX = 0;
-            this.clipY = 0;
-            this.clipWidth = 0;
-            this.clipHeight = 0;
-        }
-
-        get width(){
-            return this.data.width;
-        }
-
-        get height(){
-            return this.data.height;
-        }
-
-        static from(url){
-            let tempCanvas = document.createElement("canvas"),
-                tempCtx = tempCanvas.getContext("2d");
-
-            let img = null;
-            if(url in BitmapData.loadedImages){
-                img = BitmapData.loadedImages[url];
-            }
-            else{
-                img = document.createElement("img");
-                img.addEventListener("load", evt => BitmapData.loadedImages[url] = img);
-                img.setAttribute("src", url);
-            }
-
-            tempCtx.drawImage(img, 0, 0, image.width, image.height);
-
-            let data = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
-
-            return new BitmapData(data);
-        }
-    };
-    BitmapData.loadedImages = {};
-
-    let ImageData = class ImageData{
-        constructor(image=null){
-            if(image === null){
-                image = document.createElement("img");
-            }
-
-            if(image instanceof window.HTMLImageElement === false){
-                throw new Error("Image argument must be of type HTMLImageElement.");
-            }
-
-            this.image = image;
-            this.clipX = 0;
-            this.clipY = 0;
-            this.clipWidth = 0;
-            this.clipHeight = 0;
-        }
-
-        autoSize(){
-            this.clipWidth = this.image.width;
-            this.clipHeight = this.image.height;
-        }
-
-        static from(url){
-            let img = document.createElement("img");
-            
-            let imgData = new ImageData(img);
-            img.addEventListener("load", evt => imgData.autoSize());
-            img.setAttribute("src", url);
-
-            return imgData;
-        }
-    };
+    FFEvent.ANIM_UPDATE = "animupdate";
 
     let EventEmitter = class EventEmitter{
         constructor(){
@@ -613,16 +542,22 @@ const FF = (() => {
         constructor(image=null, x=0, y=0, width=0, height=0){
             super(x, y, width, height);
 
-            this._imageData = null;
+            this._clipX = 0;
+            this._clipY = 0;
+            this._clipWidth = 0;
+            this._clipHeight = 0;
+            this._clipEnabled = false;
+
+            this._image = null;
             
             if(typeof image === "string"){
-                this._imageData = ImageData.from(image);
+                this._image = ImageUtils.load(image, evt => this.autoClipSize);
             }
-            else if(image instanceof BitmapData){
-                this._imageData = image;
+            else if(image instanceof window.HTMLImageElement){
+                this._image = image;
             }
             else{
-                this._imageData = new ImageData();
+                this._image = ImageUtils.EMPTY_IMAGE;
             }
         }
         
@@ -632,7 +567,15 @@ const FF = (() => {
 
                 GLOBAL_CTX.globalAlpha = this.drawAlpha;
 
-                GLOBAL_CTX.drawImage(this.getImageElement(), this.drawX, this.drawY, this.width, this.height);
+                if(!this._clipEnabled){
+                    GLOBAL_CTX.drawImage(this._image, this.drawX, this.drawY, this.width, this.height);
+                }
+                else{
+                    GLOBAL_CTX.drawImage(
+                        this._image, this.clipX, this.clipY, this.clipWidth, this.clipHeight,
+                        this.drawX, this.drawY, this.width, this.height
+                    );
+                }
 
                 GLOBAL_CTX.restore();
 
@@ -640,12 +583,71 @@ const FF = (() => {
             }
         }
 
+        autoClipSize(){
+            if(this._image){
+                this._clipWidth = this._image.width;
+                this._clipHeight = this._image.height;
+            }
+            this._clipEnabled = (this.clipHeight > 0 && this.clipWidth > 0);
+        }
+
         getImageElement(){
-            return this._imageData.image;
+            return this._image;
+        }
+
+        set clipX(clipX){
+            if(typeof clipX === "number"){
+                this._clipX = clipX;
+            }
+        }
+
+        set clipY(clipY){
+            if(typeof clipY === "number"){
+                this._clipY = clipY;
+            }
+        }
+
+        set clipWidth(clipWidth){
+            if(typeof clipWidth === "number"){
+                this._clipWidth = clipWidth;
+                this._clipEnabled = (this.clipHeight > 0 && this.clipWidth > 0);
+            }
+        }
+
+        set clipHeight(clipHeight){
+            if(typeof clipHeight === "number"){
+                this._clipHeight = clipHeight;
+                this._clipEnabled = (this.clipHeight > 0 && this.clipWidth > 0);
+            }
+        }
+
+        get clipX(){
+            return this._clipX;
+        }
+
+        get clipY(){
+            return this._clipY;
+        }
+
+        get clipWidth(){
+            return this._clipWidth;
+        }
+
+        get clipHeight(){
+            return this._clipHeight;
         }
 
         toString(){
             return "[object FF.Sprite]";
+        }
+    };
+
+    let AnimationFrameData = class AnimationFrameData{
+        constructor(clipX, clipY, clipWidth, clipHeight){
+            this.clipX = clipX;
+            this.clipY = clipY;
+            this.clipWidth = clipWidth;
+            this.clipHeight = clipHeight;
         }
     };
 
@@ -657,6 +659,8 @@ const FF = (() => {
             this._animationEnabled = true;
             this._currentFrame = 0;
             this._currentAnimation = null;
+
+            this.on(FFEvent.RENDER_START, evt => this.autoAnimate());
         }
 
         next(){
@@ -675,8 +679,21 @@ const FF = (() => {
             this.updateAnim();
         }
 
-        updateAnim(){
+        autoAnimate(){
+            if(this._animationEnabled && GLOBAL_STAGE._frameNum % (Stage.FRAMES_PER_ANIM_CYCLE / this.numFrames) === 0){
+                this.next();
+            }
+        }
 
+        updateAnim(){
+            let animData = this.getAnimData();
+            if(animData){
+                this.clipX = animData.clipX;
+                this.clipY = animData.clipY;
+                this.clipWidth = animData.clipWidth;
+                this.clipHeight = animData.clipHeight;
+            }
+            this.emit(new FFEvent(FFEvent.ANIM_UPDATE));
         }
 
         gotoAndPlay(frame){
@@ -720,6 +737,10 @@ const FF = (() => {
 
         getFrames(){
             return (this.currentAnimation) ? this._animations[this.currentAnimation] : AnimatedSprite.EMPTY_SET;
+        }
+
+        getAnimData(){
+            return (this.numFrames > 0) ? this._animations[this.currentAnimation][this._currentFrame] : null;
         }
 
         set currentFrame(currentFrame){
@@ -1083,6 +1104,36 @@ const FF = (() => {
         }
     };
 
+    let ImageUtils = class ImageUtils{
+        static load(url, done){
+            let img = document.createElement("img");
+
+            if(typeof done === "function"){
+                img.addEventListener("load", done);
+            }
+
+            img.setAttribute("src", url);
+
+            return img;
+        }
+    };
+    ImageUtils.EMPTY_IMAGE = document.createElement("img");
+
+    let SoundUtils = class SoundUtils{
+        static load(url, done){
+            let audio = document.createElement("audio");
+
+            if(typeof done === "function"){
+                audio.addEventListener("load", done);
+            }
+            
+            audio.setAttribute("src", url);
+
+            return audio;
+        }
+    };
+    SoundUtils.EMPTY_SOUND = document.createElement("audio");
+
     let Scroller = class Scroller{
 
     };
@@ -1130,9 +1181,16 @@ const FF = (() => {
 
             this.context = this._canvas.getContext("2d");
 
+            this._frameNum = 0;
+
             this.resize(width, height);
 
             let renderLoop = () => {
+                this._frameNum++;
+                if(this._frameNum === Stage.FRAMES_PER_ANIM_CYCLE){
+                    this._frameNum = 0;
+                }
+
                 this.clear();
                 this.render();
                 window.requestAnimationFrame(renderLoop);
@@ -1211,6 +1269,10 @@ const FF = (() => {
             }
         }
 
+        setQuality(quality){
+            this.context.imageSmoothingQuality = quality;
+        }
+
         setContextMenuEnabled(state){
             this._canvas.oncontextmenu = () => {return state};
         }
@@ -1235,6 +1297,7 @@ const FF = (() => {
             return this._canvas;
         }
     };
+    Stage.FRAMES_PER_ANIM_CYCLE = 60;
 
     let init = (element, width, height) => {
         if(typeof element === "string"){
@@ -1253,19 +1316,22 @@ const FF = (() => {
     const GLOBAL_STAGE = new Stage(),
         GLOBAL_CTX = GLOBAL_STAGE.context;
 
-    //console.log(`FlashfireJS v${VERSION}`);
     return {
         AnimatedSprite: AnimatedSprite,
+        AnimationFrameData: AnimationFrameData,
         CollisionDetector: CollisionDetector,
         DisplayObject: DisplayObject,
         DisplayObjectContainer: DisplayObjectContainer,
         EventEmitter: EventEmitter,
         FFEvent: FFEvent,
         GameEntity: GameEntity,
+        ImageUtils: ImageUtils,
         KeyHandler: KeyHandler,
         MapBuilder: MapBuilder,
+        MultiplayerManager: MultiplayerManager,
         RNG: RNG,
         Scroller: Scroller,
+        SoundUtils: SoundUtils,
         Sprite: Sprite,
         TextField: TextField,
         init: init,
