@@ -8,7 +8,7 @@
 
 const FF = (() => {
     const AUTHOR = "David Rosenblum",
-        VERSION = "0.1.0";
+        VERSION = "0.1.1";
 
     let lastDisplayObjectID = 0;
 
@@ -235,7 +235,7 @@ const FF = (() => {
                 if(alpha < 0)
                     alpha = 0;
 
-                if(alptha > 1)
+                if(alpha > 1)
                     alpha = 1;
 
                 this._alpha = alpha;
@@ -304,6 +304,13 @@ const FF = (() => {
                 return this.y + this.parent.drawY;
             }
             return this.y;
+        }
+
+        get drawAlpha(){
+            if(this.parent){
+                return this.alpha * this.parent.drawAlpha;
+            }
+            return this.alpha;
         }
 
         toString(){
@@ -512,7 +519,7 @@ const FF = (() => {
 
                 GLOBAL_CTX.save();
 
-                GLOBAL_CTX.alpha = this.alpha;
+                GLOBAL_CTX.globalAlpha = this.drawAlpha;
                 GLOBAL_CTX.font = this.font;
                 GLOBAL_CTX.fillStyle = this.fillColor;
                 GLOBAL_CTX.strokeStyle = this.strokeStyle;
@@ -603,16 +610,16 @@ const FF = (() => {
     };
 
     let Sprite = class Sprite extends DisplayObjectContainer{
-        constructor(bmd=null, x=0, y=0, width=0, height=0){
+        constructor(image=null, x=0, y=0, width=0, height=0){
             super(x, y, width, height);
 
             this._imageData = null;
             
-            if(typeof bmd === "string"){
-                this._imageData = ImageData.from(bmd);
+            if(typeof image === "string"){
+                this._imageData = ImageData.from(image);
             }
-            else if(bmd instanceof BitmapData){
-                this._imageData = bmd;
+            else if(image instanceof BitmapData){
+                this._imageData = image;
             }
             else{
                 this._imageData = new ImageData();
@@ -623,7 +630,7 @@ const FF = (() => {
             if(this.visible){
                 this.emit(new FFEvent(FFEvent.RENDER_START));
 
-                GLOBAL_CTX.alpha = this.alpha;
+                GLOBAL_CTX.globalAlpha = this.drawAlpha;
 
                 GLOBAL_CTX.drawImage(this.getImageElement(), this.drawX, this.drawY, this.width, this.height);
 
@@ -645,12 +652,105 @@ const FF = (() => {
     let AnimatedSprite = class AnimatedSprite extends Sprite{
         constructor(image=null, x=0, y=0, width=0, height){
             super(image, x, y, width, height);
+
+            this._animations = {};
+            this._animationEnabled = true;
+            this._currentFrame = 0;
+            this._currentAnimation = null;
+        }
+
+        next(){
+            this.currentFrame++;
+            if(this.currentFrame >= this.numFrames){
+                this.currentFrame = 0;
+            }
+            this.updateAnim();
+        }
+
+        prev(){
+            this.currentFrame--;
+            if(this.currentFrame < 0){
+                this.currentFrame = this.numFrames;
+            }
+            this.updateAnim();
+        }
+
+        updateAnim(){
+
+        }
+
+        gotoAndPlay(frame){
+            this.currentFrame = frame;
+            this._animationEnabled =  true;
+            this.updateAnim();
+        }
+
+        gotoAndStop(frame){
+            this.currentFrame = frame;
+            this._animationEnabled =  false;
+            this.updateAnim();
+        }
+
+        playAnimation(name){
+            if(name in this._animations){
+                this._currentAnimation = name;
+                this.gotoAndPlay(0);
+                return true;
+            }
+            return false;
+        }
+
+        setAnimation(name, frames){
+            for(let frame of frames){
+                if(frame instanceof AnimationFrameData === false){
+                    throw new Error("Frames must be an Array of AnimationFrameData.");
+                }
+            }
+
+            this._animations[name] = frames;
+        }
+
+        setAnimationEnabled(state){
+            this._animationEnabled = state;
+        }
+
+        isAnimated(){
+            return this._animationEnabled;
+        }
+
+        getFrames(){
+            return (this.currentAnimation) ? this._animations[this.currentAnimation] : AnimatedSprite.EMPTY_SET;
+        }
+
+        set currentFrame(currentFrame){
+            if(typeof currentFrame === "number"){
+                this._currentFrame = parseInt(currentFrame);
+            }
+        }
+
+        set currentAnimation(currentAnimation){
+            if(typeof currentAnimation === "string"){
+                this.playAnimation(currentAnimation);
+            }
+        }
+
+        get currentFrame(){
+            return this._currentFrame;
+        }
+
+        get currentAnimation(){
+            return this._currentAnimation;
+        }
+
+        get numFrames(){
+            return this.getFrames().length;
         }
 
         toString(){
             return "[object FF.AnimatedSprite]";
         }
     };
+    AnimatedSprite.EMPTY_SET = {length: 0};
 
     let GameEntity = class GameEntity extends AnimatedSprite{
         constructor(image=null, x=0, y=0, width=0, height=0){
@@ -753,7 +853,7 @@ const FF = (() => {
             if(collisionDetector){
                 if(collisionDetector instanceof CollisionDetector){
                     if(collisionDetector.collisionBelow(this)){
-                        this.y = originalY - 1;
+                        this.y = originalY;
                     }
                 }
                 else if(collisionDetector instanceof Array){
@@ -826,27 +926,27 @@ const FF = (() => {
 
         collisionLeft(entity){
             let x = Math.floor(entity.x / this._tileSize),
-                y = Math.floor(entity.centerY / this._tileSize);
+                y = Math.ceil(entity.centerY / this._tileSize);
 
             return this.getTileAt(x, y);
         }
 
         collisionRight(entity){
             let x = Math.floor(entity.right / this._tileSize),
-                y = Math.floor(entity.centerY / this._tileSize);
+                y = Math.ceil(entity.centerY / this._tileSize);
 
             return this.getTileAt(x, y);
         }
 
-        collisionAbove(entity){
-            let x = Math.floor(entity.centerX / this._tileSize),
+        collisionAbove(entity, allowFront=true){
+            let x = Math.floor(entity.x / this._tileSize),
                 y = Math.floor(entity.bottom / this._tileSize);
 
            return this.getTileAt(x, y);
         }
 
         collisionBelow(entity){
-            let x = Math.floor(entity.centerX / this._tileSize),
+            let x = Math.floor(entity.x / this._tileSize),
                 y = Math.ceil(entity.bottom / this._tileSize);
 
            return this.getTileAt(x, y);
