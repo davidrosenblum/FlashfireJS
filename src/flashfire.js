@@ -8,7 +8,7 @@
 
 const FF = (() => {
     const AUTHOR = "David Rosenblum",
-        VERSION = "0.1.2";
+        VERSION = "0.1.3";
 
     let lastDisplayObjectID = 0;
 
@@ -797,20 +797,26 @@ const FF = (() => {
                 if(collisionDetector instanceof CollisionDetector){
                     if(collisionDetector.collisionLeft(this)){
                         this.x = originalX;
+                        return;
                     }
                 }
                 else if(collisionDetector instanceof Array){
                     let hit = this.hitTestGroup(collisionDetector);
                     if(hit){
                         this.x = hit.right;
+                        return;
                     }
                 }
             }
 
-            if(bounds && bounds instanceof DisplayObject){
+            if(bounds && bounds instanceof Rectangle){
                 if(this.x < bounds.x){
                     this.x = bounds.x;
                 }
+            }
+
+            if(scroller && scroller instanceof Scroller){
+                scroller.scrollXWith(this, -this.moveSpeed);
             }
         }
 
@@ -823,20 +829,26 @@ const FF = (() => {
                 if(collisionDetector instanceof CollisionDetector){
                     if(collisionDetector.collisionRight(this)){
                         this.x = originalX;
+                        return;
                     }
                 }
                 else if(collisionDetector instanceof Array){
                     let hit = this.hitTestGroup(collisionDetector);
                     if(hit){
                         this.x = hit.x - this.width;
+                        return;
                     }
                 }
             }
 
-            if(bounds && bounds instanceof DisplayObject){
-                if(this.right > bounds.x){
-                    this.x = bounds.x - this.width;
+            if(bounds && bounds instanceof Rectangle){
+                if(this.right > bounds.right){
+                    this.x = bounds.right - this.width;
                 }
+            }
+
+            if(scroller && scroller instanceof Scroller){
+                scroller.scrollXWith(this, this.moveSpeed);
             }
         }
 
@@ -849,20 +861,26 @@ const FF = (() => {
                 if(collisionDetector instanceof CollisionDetector){
                     if(collisionDetector.collisionAbove(this)){
                         this.y = originalY + 1;
+                        return;
                     }
                 }
                 else if(collisionDetector instanceof Array){
                     let hit = this.hitTestGroup(collisionDetector);
                     if(hit){
                         this.y = hit.bottom;
+                        return;
                     }
                 }
             }
 
-            if(bounds && bounds instanceof DisplayObject){
+            if(bounds && bounds instanceof Rectangle){
                 if(this.y < bounds.y){
                     this.y = bounds.y;
                 }
+            }
+
+            if(scroller && scroller instanceof Scroller){
+                scroller.scrollYWith(this, -this.moveSpeed);
             }
         }
 
@@ -875,20 +893,26 @@ const FF = (() => {
                 if(collisionDetector instanceof CollisionDetector){
                     if(collisionDetector.collisionBelow(this)){
                         this.y = originalY;
+                        return;
                     }
                 }
                 else if(collisionDetector instanceof Array){
                     let hit = this.hitTestGroup(collisionDetector);
                     if(hit){
                         this.y = hit.y - this.height;
+                        return;
                     }
                 }
             }
 
-            if(bounds && bounds instanceof DisplayObject){
-                if(this.bottom > bounds.y){
-                    this.y = bounds.y - this.height;
+            if(bounds && bounds instanceof Rectangle){
+                if(this.bottom > bounds.bottom){
+                    this.y = bounds.bottom - this.height;
                 }
+            }
+
+            if(scroller && scroller instanceof Scroller){
+                scroller.scrollYWith(this, this.moveSpeed);
             }
         }
 
@@ -1134,8 +1158,200 @@ const FF = (() => {
     };
     SoundUtils.EMPTY_SOUND = document.createElement("audio");
 
-    let Scroller = class Scroller{
+    let Rectangle = class Rectangle{
+        constructor(x=0, y=0, width=0, height=0){
+            this._x = 0;
+            this._y = 0;
+            this._width = 0;
+            this._height = 0;
 
+            this.x = x;
+            this.y = y;
+            this.width = width;
+            this.height = height;
+        }
+
+        set x(x){
+            if(typeof x === "number"){
+                this._x = x;
+            }
+        }
+
+        set y(y){
+            if(typeof y === "number"){
+                this._y = y;
+            }
+        }
+
+        set width(width){
+            if(typeof width === "number"){
+                this._width = width;
+            }
+        }
+
+        set height(height){
+            if(typeof height === "number"){
+                this._height = height;
+            }
+        }
+
+        get x(){
+            return this._x;
+        }
+
+        get y(){
+            return this._y;
+        }
+
+        get width(){
+            return this._width;
+        }
+
+        get height(){
+            return this._height;
+        }
+
+        get centerX(){
+            return this.x + this.width / 2;
+        }
+
+        get centerY(){
+            return this.y + this.height / 2;
+        }
+
+        get right(){
+            return this.x + this.width;
+        }
+
+        get bottom(){
+            return this.y + this.height;
+        }
+    };
+
+    let Scroller = class Scroller{
+        constructor(containers, bounds, viewWidth, viewHeight){
+            if(!containers){
+                containers = [];
+                console.warn("Scroller: containers argument is null, defaulting to empty array.")
+            }
+
+            if(bounds instanceof Rectangle === false){
+                throw new Error("bounds argument must be of type Rectangle.");
+            }
+
+            this._bounds = bounds;
+
+            this._scroll = new Rectangle(0, 0, viewWidth, viewHeight);
+
+            this._containers = [];
+            for(let container of containers){
+                if(container instanceof DisplayObjectContainer === false){
+                    throw new Error("container argument must be an Array of type DisplayObjectContainer.");
+                }
+                this._containers.push(container);
+            }
+        }
+
+        update(){
+            for(let container of this._containers){
+                container.x = -this._scroll.x;
+                container.y = -this._scroll.y;
+            }
+        }
+
+        scrollXWith(target, distance=1){
+            if(target instanceof DisplayObject){
+                if(target.centerX <= this._scroll.centerX){
+                    if(distance < 0){
+                        this.scrollX(distance);
+                    }
+                }
+                else{
+                    if(distance > 0){
+                        this.scrollX(distance);
+                    }
+                }
+            }
+            else throw new Error("target argument must be of type DisplayObject.");
+        }
+
+        scrollYWith(target, distance=1){
+            if(target instanceof DisplayObject){
+                if(target.centerY <= this._scroll.centerY){
+                    if(distance < 0){
+                        this.scrollY(distance);
+                    }
+                }
+                else{
+                    if(distance > 0){
+                        this.scrollY(distance);
+                    }
+                }
+            }
+            else throw new Error("target argument must be of type DisplayObject.");
+        }
+
+        scrollX(distance=1){
+            let offset = this.offsetX + distance;
+            if(offset >= this.left && offset + this.width <= this.right){
+                this._scroll.x = offset;
+                this.update();
+                return true;
+            }
+            return false;
+        }
+
+        scrollY(distance=1){
+            let offset = this.offsetY + distance;
+            if(offset >= this.top && offset + this.height <= this.bottom){
+                this._scroll.y = offset;
+                this.update();
+                return true;
+            }
+            return false;
+        }
+
+        scrollXIgnoreBounds(distance=1){
+            this._scroll.x += distance;
+            this.update();
+        }
+
+        scrollYIgnoreBounds(distance=1){
+            this._scroll.y += distance;
+            this.update();
+        }
+
+        get left(){
+            return this._bounds.x;
+        }
+
+        get right(){
+            return this._bounds.width;
+        }
+
+        get top(){
+            return this._bounds.y;
+        }
+
+        get bottom(){
+            return this._bounds.height;
+        }
+
+        get offsetX(){
+            return this._scroll.x;
+        }
+
+        get offsetY(){
+            return this._scroll.y;
+        }
+
+        get width(){
+            return this._scroll.width;
+        }
+
+        get height(){
+            return this._scroll.height;
+        }
     };
 
     let MapBuilder = class MapBuilder{
@@ -1178,12 +1394,12 @@ const FF = (() => {
 
             this._canvas = document.createElement("canvas");
             this._canvas.setAttribute("flashfire", "canvas");
-
             this.context = this._canvas.getContext("2d");
 
             this._frameNum = 0;
 
             this.resize(width, height);
+            this.setDefaultContextMenuEnabled(false);
 
             let renderLoop = () => {
                 this._frameNum++;
@@ -1244,6 +1460,7 @@ const FF = (() => {
                     font-family: arial,
                     padding: 5px 10px 5px 10px;
                     box-shadow: 2px 2px 2px black;
+                    border: 1px solid black;
                 `;
 
                 let ul = cm.querySelector("ul");
@@ -1257,8 +1474,8 @@ const FF = (() => {
                 lis.forEach(li => li.style.cssText = `margin: 4px 1px 4px 1px;`);
             }
 
-            cm.style.left = evt.clientX + "px";
-            cm.style.top = evt.clientY + "px";
+            cm.style.left = ((evt) ? evt.clientX : 0) + "px";
+            cm.style.top = ((evt) ? evt.clientY : 0) + "px";
             cm.style.display = "block";
         }
 
@@ -1273,7 +1490,7 @@ const FF = (() => {
             this.context.imageSmoothingQuality = quality;
         }
 
-        setContextMenuEnabled(state){
+        setDefaultContextMenuEnabled(state){
             this._canvas.oncontextmenu = () => {return state};
         }
 
@@ -1329,6 +1546,7 @@ const FF = (() => {
         KeyHandler: KeyHandler,
         MapBuilder: MapBuilder,
         MultiplayerManager: MultiplayerManager,
+        Rectangle: Rectangle,
         RNG: RNG,
         Scroller: Scroller,
         SoundUtils: SoundUtils,
