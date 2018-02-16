@@ -8,7 +8,7 @@
 
 const FF = (() => {
     const AUTHOR = "David Rosenblum",
-        VERSION = "0.1.3";
+        VERSION = "0.1.4";
 
     let lastDisplayObjectID = 0;
 
@@ -336,6 +336,10 @@ const FF = (() => {
             }
         }
 
+        removeAllChildren(){
+            this.forEachChild(child => child.remove());
+        }
+
         findChildIndex(object){
             for(let i = 0; i < this.numChildren; i++){
                 if(this.getChildAt(i) === object){
@@ -580,6 +584,13 @@ const FF = (() => {
                 GLOBAL_CTX.restore();
 
                 this.emit(new FFEvent(FFEvent.RENDER_DONE));
+            }
+        }
+
+        sizeToImage(){
+            if(this._image){
+                this.width = this._image.width;
+                this.height = this._image.height;
             }
         }
 
