@@ -8,7 +8,7 @@
 
 const FF = (() => {
     const AUTHOR = "David Rosenblum",
-        VERSION = "0.1.4";
+        VERSION = "0.1.5";
 
     let lastDisplayObjectID = 0;
 
@@ -27,6 +27,8 @@ const FF = (() => {
     FFEvent.RENDER_START = "renderstart";
     FFEvent.RENDER_DONE = "renderdone";
     FFEvent.CLICK = "click";
+    FFEvent.MOUSE_OVER = "mouseover";
+    FFEvent.MOUSE_OUT = "mouseout";
     FFEvent.ANIM_UPDATE = "animupdate";
 
     let EventEmitter = class EventEmitter{
@@ -75,6 +77,7 @@ const FF = (() => {
 
             this._parent = null;
             this._id = ++lastDisplayObjectID;
+            this._hoverState = false;
 
             this.setPosition(x, y);
             this.setSize(width, height);
@@ -337,7 +340,7 @@ const FF = (() => {
         }
 
         removeAllChildren(){
-            this.forEachChild(child => child.remove());
+            this.forEachChild(child => this.removeChild(child));
         }
 
         findChildIndex(object){
@@ -440,10 +443,10 @@ const FF = (() => {
             super(x, y);
 
             this._text = (typeof text === "string") ? text : "";
-            this._font = "12px arial";
+            this._font = TextField.DEFAULT_FONT;
 
-            this._fillColor = "white";
-            this._strokeColor = "black";
+            this._fillColor = TextField.DEFAULT_FILL_COLOR;
+            this._strokeColor = TextField.DEFAULT_STROKE_COLOR;
         }
 
         render(){
@@ -541,6 +544,9 @@ const FF = (() => {
             return "[object FF.TextField]";
         }
     };
+    TextField.DEFAULT_FONT = "12px arial";
+    TextField.DEFAULT_FILL_COLOR  = "white";
+    TextField.DEFAULT_STROKE_COLOR = "black";
 
     let Sprite = class Sprite extends DisplayObjectContainer{
         constructor(image=null, x=0, y=0, width=0, height=0){
@@ -791,12 +797,57 @@ const FF = (() => {
             this._moveSpeed = 1;
             this._objectID = 0;
             this._ownerID = 0;
+            this._hitbox = null
         }
 
         static create(options){
             options = (!options) ? {} : options;
-
             return new GameEntity(options.image, options.x, options.y, options.width, options.heigth);
+        }
+
+        hitboxCollision(target){
+            if(!this.hitbox){
+                return false;
+            }
+
+            if(target instanceof DisplayObject === false || target instanceof GameEntity === false){
+                throw new Error("Target must be of type GameEntity or DisplayObject.");
+            }
+
+            let x1 = this.hitbox.x + this.x,
+                y1 = this.hitbox.y + this.y;
+
+            if(target instanceof GameEntity){
+                let x2 = target.hitbox.x + target.x,
+                    y2 = target.hitbox.y + target.y;
+
+                if(x1 < x2 + target.hitbox.width && x2 < x1 + this.hitbox.width){
+                    if(y1 < y2 + target.hitbox.height && y < y1 + this.hitbox.height){
+                        return true;
+                    }
+                }
+            }
+            else if(target instanceof DisplayObject){
+                if(x1 < target.right && target.x < x1 + this.hitbox.width){
+                    if(y1 < target.bottom && target.y < y1 + this.hitbox.height){
+                        return true;
+                    }
+                }
+            }
+            return false
+        }
+
+        hitboxCollisionGroup(targets){
+            if(!this.hitbox){
+                return false;
+            }
+
+            for(let target of targets){
+                if(this.hitboxCollision(target)){
+                    return target;
+                }
+            }
+            return null;
         }
 
         moveLeft(collisionDetector=null, bounds=null, scroller=null){
@@ -953,6 +1004,13 @@ const FF = (() => {
             }
         }
 
+        set hitbox(hitbox){
+            if(typeof hitbox === Rectangle){
+                this._hitbox = hitbox;
+            }
+            else throw new Error("Hitbox argument should be of type Rectangle.");
+        }
+
         get moveSpeed(){
             return this._moveSpeed;
         }
@@ -963,6 +1021,10 @@ const FF = (() => {
 
         get ownerID(){
             return this._ownerID;
+        }
+
+        get hitbox(){
+            return this._hitbox;
         }
 
         toString(){
@@ -1430,6 +1492,23 @@ const FF = (() => {
                 this.forEachChildRecursive(child => {
                     if(child.hitTestObject(hitbox)){
                         child.emit(new FFEvent(FFEvent.CLICK));
+                    }
+                });
+            });
+
+            this.canvas.addEventListener("mousemove", evt => {
+                let hitbox = new DisplayObject(evt.offsetX, evt.offsetY, 3, 3);
+
+                this.forEachChildRecursive(child => {
+                    if(child.hitTestObject(hitbox)){
+                        if(child._hoverState){
+                            child.emit(new FFEvent(FFEvent.MOUSE_OUT));
+                        }
+                        else{
+                            child.emit(new FFEvent(FFEvent.MOUSE_OVER));
+                        }
+
+                        child._hoverState = !child._hoverState;
                     }
                 });
             });
