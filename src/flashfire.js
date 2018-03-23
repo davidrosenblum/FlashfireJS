@@ -6,11 +6,12 @@
 
 "use strict";
 
-const FF = (() => {
+const FF = (function(){
     const AUTHOR = "David Rosenblum",
-        VERSION = "0.1.5";
+        VERSION = "0.1.6";
 
-    let lastDisplayObjectID = 0;
+    let lastDisplayObjectID = 0,
+        selectedObject = null;
 
     let FFEvent = class FFEvent{
         constructor(type, target){
@@ -81,6 +82,8 @@ const FF = (() => {
 
             this.setPosition(x, y);
             this.setSize(width, height);
+
+            this.on(FFEvent.CLICK, evt => selectedObject = this);
         }
 
         render(){
@@ -360,7 +363,7 @@ const FF = (() => {
         }
 
         depthSort(){
-            for(let i = 0; i < this.numChildren; i++){
+            /*for(let i = 0; i < this.numChildren; i++){
                 let a = this.getChildAt(i);
 
                 for(let j = i + 1; j < this.numChildren; j++){
@@ -371,7 +374,10 @@ const FF = (() => {
                         a = b;
                     }
                 }
-            }
+            }*/
+
+            //SortUtils.selectionSort(this._drawList, (a, b) => a.bottom > b.bottom);
+            SortUtils.quickSort(this._drawList, (a, b) => a.bottom > b.bottom);
         }
 
         swapChildren(target1, target2){
@@ -548,6 +554,12 @@ const FF = (() => {
     TextField.DEFAULT_FILL_COLOR  = "white";
     TextField.DEFAULT_STROKE_COLOR = "black";
 
+    let InputTextField = class InputTextField extends TextField{
+        constructor(text=null, x=0, y=0){
+            super(text, x, y);
+        }
+    };
+
     let Sprite = class Sprite extends DisplayObjectContainer{
         constructor(image=null, x=0, y=0, width=0, height=0){
             super(x, y, width, height);
@@ -665,6 +677,10 @@ const FF = (() => {
             this.clipY = clipY;
             this.clipWidth = clipWidth;
             this.clipHeight = clipHeight;
+        }
+
+        toString(){
+            return "[object FF.AnimationFrameData]";
         }
     };
 
@@ -1117,6 +1133,43 @@ const FF = (() => {
         }
     };
 
+    let AssetUtils = class AssetUtils{
+        static load(dict, callback){
+            let totalItems = 0,
+                itemsLoaded = 0,
+                allLoadsStarted = false;
+
+            let checkDone = function(){
+                itemsLoaded++;
+                if(itemsLoaded === totalItems){
+                    callback();    
+                }
+            };
+
+            if("images" in dict){
+                for(let url of dict.images){
+                    totalItems++;
+
+                    if(url in ImageUtils.ASSETS){
+                        checkDone();
+                    }
+                    else{
+                        ImageUtils.load(url, checkDone);
+                    }
+                }
+            }
+
+            if("sounds" in dict){
+                for(let url of dict.sounds){
+                    totalItems++;
+                    SoundUtils.load(url, checkDone);
+                }
+            }
+
+            allLoadsStarted = true;
+        }
+    };
+
     let KeyHandler = class KeyHandler{
         constructor(element){
             element = (element instanceof window.HTMLElement) ? element : document.body;
@@ -1189,6 +1242,79 @@ const FF = (() => {
         get numKeys(){
             return this._numKeys;
         }
+
+        toString(){
+            return "[object FF.KeyHandler]";
+        }
+    };
+
+    let SortUtils = class SortUtils{
+        static selectionSort(array, compare){
+            if(typeof compare !== "function"){
+                compare = (a, b) => a > b;
+            }
+
+            for(let i = 0, a; i < array.length; i++){
+                a = array[i];
+
+                for(let j = i + 1, b; j < array.length; j++){
+                    b = array[j];
+
+                    if(compare(a, b)){
+                        SortUtils.swap(array, i, j);
+                        a = b;
+                    }
+                }
+            }
+        }
+
+        static quickSort(array, compare){
+            if(typeof compare !== "function"){
+                compare = (a, b) => a > b;
+            }
+
+            if(array.length <= 1){
+                return;
+            }
+
+            SortUtils._qsort(array, 0, array.length - 1);
+        }
+
+        static _qsort(array, startIndex, endIndex){
+            let leftIndex = startIndex,
+                rightIndex = endIndex,
+                pivot = array[endIndex];
+
+            while(leftIndex < rightIndex){
+                while(array[leftIndex] < pivot){
+                    leftIndex++;
+                }
+
+                while(array[rightIndex] > pivot){
+                    rightIndex--;
+                }
+
+                if(leftIndex <= rightIndex){
+                    SortUtils.swap(array, leftIndex, rightIndex);
+                    leftIndex++;
+                    rightIndex--;
+                }
+            }
+
+            if(startIndex < rightIndex){
+                SortUtils._qsort(array, startIndex, rightIndex);
+            }
+
+            if(endIndex > leftIndex){
+                SortUtils._qsort(array, leftIndex, endIndex);
+            }
+        }
+
+        static swap(array, index1, index2){
+            let temp = array[index1];
+            array[index1] = array[index2];
+            array[index2] = temp;
+        }
     };
 
     let RNG = class RNG{
@@ -1203,6 +1329,10 @@ const FF = (() => {
 
     let ImageUtils = class ImageUtils{
         static load(url, done){
+            if(url in ImageUtils.ASSETS){
+                return ImageUtils.ASSETS[url];
+            }
+
             let img = document.createElement("img");
 
             if(typeof done === "function"){
@@ -1211,13 +1341,20 @@ const FF = (() => {
 
             img.setAttribute("src", url);
 
+            ImageUtils.ASSETS[url] = img;
+
             return img;
         }
     };
     ImageUtils.EMPTY_IMAGE = document.createElement("img");
+    ImageUtils.ASSETS = {};
 
     let SoundUtils = class SoundUtils{
         static load(url, done){
+            if(url in SoundUtils.ASSETS){
+                return SoundUtils.ASSETS[url];
+            }
+
             let audio = document.createElement("audio");
 
             if(typeof done === "function"){
@@ -1230,6 +1367,7 @@ const FF = (() => {
         }
     };
     SoundUtils.EMPTY_SOUND = document.createElement("audio");
+    SoundUtils.ASSETS = {};
 
     let Rectangle = class Rectangle{
         constructor(x=0, y=0, width=0, height=0){
@@ -1425,6 +1563,10 @@ const FF = (() => {
         get height(){
             return this._scroll.height;
         }
+
+        toString(){
+            return "[object FF.Scroller]";
+        }
     };
 
     let MapBuilder = class MapBuilder{
@@ -1603,10 +1745,14 @@ const FF = (() => {
         get canvas(){
             return this._canvas;
         }
+
+        toString(){
+            return "[object FF.Stage]";
+        }
     };
     Stage.FRAMES_PER_ANIM_CYCLE = 60;
 
-    let init = (element, width, height) => {
+    let init = function(element, width, height){
         if(typeof element === "string"){
             element = document.querySelector(element);
         }
@@ -1626,6 +1772,7 @@ const FF = (() => {
     return {
         AnimatedSprite: AnimatedSprite,
         AnimationFrameData: AnimationFrameData,
+        AssetUtils: AssetUtils,
         CollisionDetector: CollisionDetector,
         DisplayObject: DisplayObject,
         DisplayObjectContainer: DisplayObjectContainer,
@@ -1640,6 +1787,7 @@ const FF = (() => {
         RNG: RNG,
         Scroller: Scroller,
         SoundUtils: SoundUtils,
+        SortUtils: SortUtils,
         Sprite: Sprite,
         TextField: TextField,
         init: init,
